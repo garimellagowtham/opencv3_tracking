@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<launch>
+  <node name="usb_cam" pkg="usb_cam" type="usb_cam_node" output="screen">
+    <param name="video_device" value="/dev/video0"/>
+    <param name="image_width" value="640"/>
+    <param name="image_height" value="480"/>
+    <param name="pixel_format" value="yuyv"/>
+    <param name="camera_frame_id" value="usb_cam"/>
+    <param name="io_method" value="mmap"/>
+  </node>
+  <!--<node name="image_view" pkg="image_view" type="image_view" respawn="false" output="screen">
+    <remap from="image" to="/usb_cam/image_raw"/>
+    <param name="autosize" value="true"/>
+  </node>-->
+  <arg name="algo" default="BOOSTING"/>
+  <!-- Options: MIL TLD BOOSTING MEDIANFLOW see (http://docs.opencv.org/3.0-beta/modules/tracking/doc/tracker_algorithms.html#TrackerTLD::Params) for more details -->
+  <param name="tracking_algorithm" type="string" value="$(arg algo)"/>
+  <arg name="cv_mode" default="true"/>
+  <node pkg="opencv3_tracking" name="object_tracker" type="objectTracking" output="screen" unless="$(arg cv_mode)">
+    <remap from="roi" to="/rqt_image_view/roi"/>
+    <remap from="image" to="/usb_cam/image_raw"/>
+  </node>
+  <node pkg="opencv3_tracking" name="object_tracker" type="cv_window_object_tracking" output="screen" if="$(arg cv_mode)">
+    <remap from="roi" to="/rqt_image_view/roi"/>
+    <remap from="image" to="/usb_cam/image_raw"/>
+  </node>
+</launch>

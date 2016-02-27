@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="algo" default="MEDIANFLOW"/>
+  <!-- Options: MIL TLD BOOSTING MEDIANFLOW see (http://docs.opencv.org/3.0-beta/modules/tracking/doc/tracker_algorithms.html#TrackerTLD::Params) for more details -->
+  <param name="tracking_algorithm" type="string" value="$(arg algo)"/>
+  <node pkg="opencv3_tracking" name="object_tracker" type="objectTracking" output="screen">
+    <remap from="roi" to="/rqt_image_view/roi"/>
+    <remap from="image" to="/camera_sim/image"/>
+  </node>
+</launch>

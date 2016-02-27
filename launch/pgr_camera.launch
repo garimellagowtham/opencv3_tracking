@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<launch>
+  <node pkg="nodelet" type="nodelet" name="camera_nodelet_manager" args="manager" output="screen">
+    <param name="num_worker_threads" type="int" value="2"/>
+  </node>
+  <node pkg="nodelet" type="nodelet" name="camera_driver" args="load camera1394/driver camera_nodelet_manager">
+    <param name="guid" type="string" value="00b09d0100d8f8b3"/>
+    <param name="video_mode" type="string" value="640x480_mono8"/>
+    <param name="frame_rate" type="double" value="60.0"/>
+    <param name="auto_shutter" type="int" value="3"/>
+    <param name="shutter" type="double" value="500.0"/>
+    <param name="auto_gain" type="int" value="3"/>
+    <param name="gain" type="double" value="30.0"/>
+    <param name="use_ros_time" type="bool" value="true"/>
+  </node>
+</launch>
