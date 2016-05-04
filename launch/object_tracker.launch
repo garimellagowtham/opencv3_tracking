@@ -19,6 +19,7 @@
   <param name="tracking_algorithm" type="string" value="$(arg algo)"/>
   <node pkg="opencv3_tracking" name="object_tracker"  type="objectTracking" output="screen">
     <remap from="roi" to="/rqt_image_view/roi"/>
+    <remap from="roi_image" to="/rqt_image_view/roi_image"/>
     <remap from="image" to="/camera/image_raw"/>
   </node>
 </launch>

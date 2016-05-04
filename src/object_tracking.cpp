@@ -17,13 +17,16 @@ class ImageTracker
   ros::NodeHandle nh_;///< Private NodeHandle
   image_transport::ImageTransport it_;///< Transposter for getting the image of right format
   image_transport::Subscriber image_sub_;///< Subscriber to image
+  image_transport::Subscriber roi_image_sub_;///< Subscriber to image
   image_transport::Publisher image_pub_;///< Publish the resulting image
   ros::Subscriber roi_subscriber_;///< Region of Interest subscriber
   ros::Publisher roi_publisher_;///< Tracked Region of Interest publisher
   cv::Rect2d roi_rect_;
+  cv_bridge::CvImagePtr roi_image_copy_;///< Copy of the Roi image received
   Ptr<Tracker> tracker;///< OpenCV object tracker
   bool tracker_initialized_;///< If Tracker has been initialized with a ROI to track
   bool roi_received_;///< flag to specify roi has been received and tracker should be reinitialized
+  bool roi_image_received_;///< Received roi and corresponding image
 
 public:
   ImageTracker(std::string tracker_algorithm)
@@ -32,6 +35,8 @@ public:
     // Subscribe to input video feed and publish output video feed
     image_sub_ = it_.subscribe("image", 1,
                                &ImageTracker::imageCb, this);
+    roi_image_sub_ = it_.subscribe("roi_image", 1,
+                               &ImageTracker::roiImageCb, this);
     image_pub_ = it_.advertise("/object_tracker/output", 1);
 
     roi_subscriber_ = nh_.subscribe("roi",1,&ImageTracker::roiCallback,this);
@@ -58,6 +63,20 @@ public:
     ROS_INFO("Roi received");
   }
 
+  void roiImageCb(const sensor_msgs::ImageConstPtr& msg)
+  {
+    try
+    {
+      roi_image_copy_ = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
+      roi_image_received_ = true;
+    }
+    catch (cv_bridge::Exception& e)
+    {
+      ROS_ERROR("cv_bridge exception: %s", e.what());
+      return;
+    }
+  }
+
   void imageCb(const sensor_msgs::ImageConstPtr& msg)
   {
     cv_bridge::CvImagePtr cv_ptr_image_copy_;///< Copy of the image received
@@ -72,14 +91,15 @@ public:
     }
 
     //Initialize Tracker:
-    if(roi_received_)
+    if(roi_received_ && roi_image_received_)
     {
       roi_received_ = false;
+      roi_image_received_ = false;//Consumed
       if(roi_rect_.height > 0 && roi_rect_.width > 0)
       {
         ROS_INFO("Initializing tracker");
         //Initialize tracker:
-        if( !tracker->init(cv_ptr_image_copy_->image, roi_rect_) )
+        if( !tracker->init(roi_image_copy_->image, roi_rect_) )
         {
           ROS_ERROR("***Could not initialize tracker...***\n");
           tracker_initialized_ = false;
@@ -87,7 +107,10 @@ public:
         else
         {
           //Tracker Initialized
-          rectangle(cv_ptr_image_copy_->image,roi_rect_, Scalar(255,0,0),3,8,0);
+          if(tracker->update( cv_ptr_image_copy_->image, roi_rect_))
+          {
+            rectangle(cv_ptr_image_copy_->image,roi_rect_, Scalar(255,0,0),3,8,0);
+          }
           tracker_initialized_ = true;
         }
       }

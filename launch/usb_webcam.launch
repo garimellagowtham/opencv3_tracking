@@ -18,6 +18,7 @@
   <arg name="cv_mode" default="true"/>
   <node pkg="opencv3_tracking" name="object_tracker" type="objectTracking" output="screen" unless="$(arg cv_mode)">
     <remap from="roi" to="/rqt_image_view/roi"/>
+    <remap from="roi_image" to="/rqt_image_view/roi_image"/>
     <remap from="image" to="/usb_cam/image_raw"/>
   </node>
   <node pkg="opencv3_tracking" name="object_tracker" type="cv_window_object_tracking" output="screen" if="$(arg cv_mode)">
