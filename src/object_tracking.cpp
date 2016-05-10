@@ -4,9 +4,12 @@
 #include <sensor_msgs/image_encodings.h>
 #include <sensor_msgs/RegionOfInterest.h>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/features2d/features2d.hpp>
+#include <opencv2/calib3d/calib3d.hpp>
 #include <opencv2/tracking.hpp>
 #include <opencv2/core/utility.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/highgui.hpp>
 
 
 
@@ -27,6 +30,12 @@ class ImageTracker
   bool tracker_initialized_;///< If Tracker has been initialized with a ROI to track
   bool roi_received_;///< flag to specify roi has been received and tracker should be reinitialized
   bool roi_image_received_;///< Received roi and corresponding image
+  bool use_features_; ///< use feature matching to initialize roi in latest image
+  std::string feature_type_;
+
+  Ptr<FeatureDetector> detector_;
+  std::vector<KeyPoint> roi_kps_;
+  Mat roi_descs_;
 
 public:
   ImageTracker(std::string tracker_algorithm)
@@ -43,6 +52,21 @@ public:
 
     roi_publisher_ = nh_.advertise<sensor_msgs::RegionOfInterest>("roi_out",1);
 
+    nh_.param<bool>("/object_tracker/use_features", use_features_, false);
+    if(use_features_)
+    {
+      ROS_INFO("Using feature matching for ROI initialization");
+      nh_.param<std::string>("feature_type", feature_type_, "ORB");
+      if(feature_type_ == "ORB")
+      {
+        detector_ = ORB::create(2000);
+      }
+      else
+      {
+        ROS_ERROR("\"%s\" is not a valid feature type", feature_type_.c_str());
+      }
+    }
+
     //Create Tracker
     tracker = Tracker::create( tracker_algorithm );
 
@@ -53,12 +77,106 @@ public:
     }
   }
 
+  bool detectROIFeatures()
+  {
+    if( roi_rect_.height == 0 || roi_rect_.width == 0)
+      return false;
+    Mat roi_mask(roi_image_copy_->image.rows, roi_image_copy_->image.cols, CV_8UC1, Scalar(0));
+    roi_mask(Range(roi_rect_.y, roi_rect_.y+roi_rect_.height-1),
+      Range(roi_rect_.x, roi_rect_.x+roi_rect_.width-1)) = Scalar(255); 
+    detector_->detectAndCompute(roi_image_copy_->image, roi_mask, roi_kps_, roi_descs_);
+    return true;
+  }
+
+  void filterMatchesEpipolarConstraint(
+    std::vector<cv::Point2f>& pts1,
+    std::vector<cv::Point2f>& pts2)
+  {
+    std::vector<unsigned char> status;
+    std::vector<cv::Point2f> filt_pts1, filt_pts2;
+    cv::Mat fMat = findFundamentalMat(pts1, pts2, CV_FM_RANSAC, 3, .99, status);
+
+    for(size_t i = 0; i < status.size(); i++)
+    {
+      if(status[i]) 
+      {
+        filt_pts1.push_back(pts1[i]);
+        filt_pts2.push_back(pts2[i]);
+      }
+    }
+    pts1 = filt_pts1;
+    pts2 = filt_pts2;
+  }
+  
+  std::vector<DMatch> filterMatchesRatioTest(const std::vector< std::vector< DMatch> >& matches,
+    double ratio)
+  {
+    std::vector<DMatch> good_matches;
+    for(size_t j = 0; j < matches.size(); ++j)
+    {
+      if(matches[j][0].distance < ratio*matches[j][1].distance)
+      {
+        good_matches.push_back(matches[j][0]);
+      }
+    }
+    return good_matches;
+  }
+
+  std::vector<Point2f> filterPointsBoundingBox(const std::vector<Point2f>& pts,
+    const cv::Rect2d& roi_rect, int num_samples)
+  {
+     num_samples = std::min(num_samples, int(pts.size()));
+     std::vector<Point2f> best_pts;
+     for(int i = 0; i < num_samples; i++)
+     {
+       int r = rand() % pts.size();
+       const Point2f& mid = pts[r];
+       std::vector<Point2f> good_pts;
+       for(size_t j = 0; j < pts.size(); j++)
+       {
+         if(pts[j].x >= mid.x-roi_rect.width/2. && pts[j].x < mid.x+roi_rect.width/2. &&
+            pts[j].y >= mid.y-roi_rect.height/2. && pts[j].y < mid.y+roi_rect.height/2.)
+         {
+           good_pts.push_back(pts[j]);
+         }
+       }
+       if(good_pts.size() > best_pts.size())
+         best_pts = good_pts;
+     }
+     return best_pts;
+  }
+
+  cv::Rect2d roiFromPoints(const std::vector<Point2f>& img_pts)
+  {
+    cv::Rect2d roi_rect;
+    float left_x, right_x, top_y, bottom_y;
+    left_x = right_x = img_pts[0].x;
+    top_y = bottom_y = img_pts[0].y;
+    for(size_t i = 1; i < img_pts.size(); i++)
+    {
+      right_x = std::max(img_pts[i].x, right_x);
+      left_x = std::min(img_pts[i].x, left_x);
+      top_y = std::min(img_pts[i].y, top_y);
+      bottom_y = std::max(img_pts[i].y, bottom_y);
+    }
+    roi_rect.x = int(left_x);
+    roi_rect.width = int(right_x - left_x + 1);
+    roi_rect.y = int(top_y);
+    roi_rect.height = int(bottom_y - top_y + 1);
+    return roi_rect;
+  }
+  
+
   void roiCallback(const sensor_msgs::RegionOfInterestConstPtr& msg)
   {
     roi_rect_.x = msg->x_offset;
     roi_rect_.y = msg->y_offset;
     roi_rect_.width = msg->width;
     roi_rect_.height = msg->height;
+    if(roi_image_received_ && use_features_)
+    {
+      detectROIFeatures();
+    }
     roi_received_ = true;
     ROS_INFO("Roi received");
   }
@@ -68,6 +186,10 @@ public:
     try
     {
       roi_image_copy_ = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
+      if(roi_received_ && use_features_)
+      {
+        detectROIFeatures();
+      }
       roi_image_received_ = true;
     }
     catch (cv_bridge::Exception& e)
@@ -98,8 +220,87 @@ public:
       if(roi_rect_.height > 0 && roi_rect_.width > 0)
       {
         ROS_INFO("Initializing tracker");
+        if(use_features_) 
+        {
+          if(roi_kps_.size() == 0)
+          {
+            ROS_WARN("ROI has no keypoints");
+            return;
+          }
+
+          std::vector<KeyPoint> img_kps;
+          Mat img_descs;
+          detector_->detectAndCompute(cv_ptr_image_copy_->image,
+            Mat(cv_ptr_image_copy_->image.rows, cv_ptr_image_copy_->image.cols, CV_8UC1, Scalar(255)),
+            img_kps, img_descs);
+
+          if(img_kps.size() == 0)
+          {
+            ROS_WARN("Image has no keypoints");
+            return;
+          }
+
+          BFMatcher matcher(NORM_HAMMING);
+          std::vector<std::vector<DMatch> > matches;
+          std::vector<DMatch> filtered_matches;
+          matcher.knnMatch(roi_descs_, img_descs, matches, 2);
+
+          if(matches.size() == 0)
+          {
+            ROS_WARN("No matches");
+            return;
+          }
+
+          filtered_matches = filterMatchesRatioTest(matches, 0.8);
+
+          if(filtered_matches.size() == 0)
+          {
+            ROS_WARN("No features after ratio test");
+            return;
+          }
+
+          std::vector<Point2f> roi_pts, img_pts;
+          std::vector<KeyPoint> roi_kps_filt, img_kps_filt;
+          for(size_t i = 0; i < filtered_matches.size(); ++i)
+          { 
+            roi_pts.push_back(roi_kps_[filtered_matches[i].queryIdx].pt);
+            roi_kps_filt.push_back(roi_kps_[filtered_matches[i].queryIdx]);
+            img_pts.push_back(img_kps[filtered_matches[i].trainIdx].pt);
+            img_kps_filt.push_back(img_kps[filtered_matches[i].trainIdx]);
+          }
+          //Mat image_matches;
+          //drawMatches(roi_image_copy_->image, roi_kps_, cv_ptr_image_copy_->image, img_kps,
+          //  filtered_matches, image_matches);
+          //imshow("matches", image_matches);
+          //waitKey(1);
+
+          filterMatchesEpipolarConstraint(roi_pts, img_pts);
+          if(img_pts.size() == 0)
+          {
+            ROS_WARN("No features after epipolar constraint");
+            return;
+          }
+
+          std::vector<Point2f> roi_filt_img_pts = filterPointsBoundingBox(img_pts, roi_rect_, 100);
+          roi_rect_ = roiFromPoints(roi_filt_img_pts);
+
+          if (roi_rect_.width <= 0 || roi_rect_.height <=0)
+          {
+            ROS_WARN("ROI from features has dimensions less than 0");
+            return;
+          }
+          if(!tracker->init(cv_ptr_image_copy_->image, roi_rect_))
+          {
+            ROS_ERROR("***Could not initialize tracker...***\n");
+            tracker_initialized_ = false;
+          }
+          else
+          {
+            tracker_initialized_ = true;
+          }
+        }
         //Initialize tracker:
-        if( !tracker->init(roi_image_copy_->image, roi_rect_) )
+        else if( !tracker->init(roi_image_copy_->image, roi_rect_) )
         {
           ROS_ERROR("***Could not initialize tracker...***\n");
           tracker_initialized_ = false;

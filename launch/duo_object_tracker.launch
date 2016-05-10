@@ -5,6 +5,7 @@
   <!--<arg name="algo" default="BOOSTING"/>-->
   <!-- Options: MIL TLD BOOSTING MEDIANFLOW see (http://docs.opencv.org/3.0-beta/modules/tracking/doc/tracker_algorithms.html#TrackerTLD::Params) for more details -->
   <param name="tracking_algorithm" type="string" value="$(arg algo)"/>
+  <param name="/object_tracker/use_features" type="bool" value="true" />
   <node pkg="opencv3_tracking" name="object_tracker"  type="objectTracking" output="screen">
     <remap from="roi" to="/rqt_image_view/roi"/>
     <remap from="roi_image" to="/rqt_image_view/roi_image"/>
