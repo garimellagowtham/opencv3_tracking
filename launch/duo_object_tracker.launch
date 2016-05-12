@@ -9,7 +9,8 @@
   <node pkg="opencv3_tracking" name="object_tracker"  type="objectTracking" output="screen">
     <remap from="roi" to="/rqt_image_view/roi"/>
     <remap from="roi_image" to="/rqt_image_view/roi_image"/>
-    <remap from="image" to="/duo3d_camera/left/image_raw"/>
+    <remap from="image" to="/duo3d_camera/left/image_rect"/>
+    <remap from="camera_info" to="/duo3d_camera/left/camera_info"/>
   </node>
   <include file="$(find disparity_image_proc)/launch/duo_disparity_image_proc.launch"/>
 </launch>
