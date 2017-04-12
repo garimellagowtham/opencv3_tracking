@@ -23,6 +23,7 @@ class ImageTracker
   image_transport::Subscriber roi_image_sub_;///< Subscriber to image
   image_transport::Publisher image_pub_;///< Publish the resulting image
   ros::Subscriber roi_subscriber_;///< Region of Interest subscriber
+  ros::Subscriber camera_info_subscriber_;///< Camera Info subscriber
   ros::Publisher roi_publisher_;///< Tracked Region of Interest publisher
   cv::Rect2d roi_rect_;
   cv_bridge::CvImagePtr roi_image_copy_;///< Copy of the Roi image received
@@ -30,8 +31,12 @@ class ImageTracker
   bool tracker_initialized_;///< If Tracker has been initialized with a ROI to track
   bool roi_received_;///< flag to specify roi has been received and tracker should be reinitialized
   bool roi_image_received_;///< Received roi and corresponding image
+  bool cam_info_received_;
   bool use_features_; ///< use feature matching to initialize roi in latest image
-  std::string feature_type_;
+  std::string feature_type_; ///< type of feature to use for feature matching
+
+  double fx_, fy_, cx_, cy_;
+  double yaw_offset_;
 
   Ptr<FeatureDetector> detector_;
   std::vector<KeyPoint> roi_kps_;
@@ -39,11 +44,13 @@ class ImageTracker
 
 public:
   ImageTracker(std::string tracker_algorithm)
-    : it_(nh_), tracker_initialized_(false), roi_received_(false)
+    : it_(nh_), tracker_initialized_(false), roi_received_(false), cam_info_received_(false)
   {
     // Subscribe to input video feed and publish output video feed
     image_sub_ = it_.subscribe("image", 1,
                                &ImageTracker::imageCb, this);
+    camera_info_subscriber_ = nh_.subscribe("camera_info", 1,
+                               &ImageTracker::cameraInfoCb, this);
     roi_image_sub_ = it_.subscribe("roi_image", 1,
                                &ImageTracker::roiImageCb, this);
     image_pub_ = it_.advertise("/object_tracker/output", 1);
@@ -177,6 +184,8 @@ public:
     {
       detectROIFeatures();
     }
+    nh_.param<double>("/tracking/yaw_offset_tracking", yaw_offset_, 0);
+    ROS_INFO("Yaw Offset: %f",yaw_offset_);
     roi_received_ = true;
     ROS_INFO("Roi received");
   }
@@ -197,6 +206,22 @@ public:
       ROS_ERROR("cv_bridge exception: %s", e.what());
       return;
     }
+  }
+
+  void cameraInfoCb(const sensor_msgs::CameraInfoConstPtr& msg)
+  {
+    if(!cam_info_received_)
+    {
+      fx_ = msg->K[0];
+      fy_ = msg->K[4];
+      cx_ = msg->K[2];
+      cy_ = msg->K[5];
+      cam_info_received_ = true;
+      ROS_INFO("Camera info received by tracker");
+    }        
+    else
+      camera_info_subscriber_.shutdown();
+ 
   }
 
   void imageCb(const sensor_msgs::ImageConstPtr& msg)
@@ -329,6 +354,11 @@ public:
             Point point1 = Point(roi_rect_.x, roi_rect_.y);
             Point point2 = Point(roi_rect_.x + roi_rect_.width, roi_rect_.y+roi_rect_.height);
             rectangle(cv_ptr_image_copy_->image, point1, point2, Scalar(255,0,0),3,8,0);
+            if(cam_info_received_)
+            {
+              double px = -fx_*tan(yaw_offset_) + cx_;
+              circle(cv_ptr_image_copy_->image, Point(px, cy_), 5, Scalar(0,0,255), 5);
+            }
           }
           //Publish ros msg:
           sensor_msgs::RegionOfInterest roi_out_msg;
