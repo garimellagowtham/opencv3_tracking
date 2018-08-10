@@ -34,7 +34,26 @@ public:
     image_pub_ = it_.advertise("/image_converter/output_video", 1);
 
     //Create Tracker
-    tracker = Tracker::create( tracker_algorithm );
+#if (CV_MINOR_VERSION < 3)
+    { tracker = Tracker::create(tracker_algorithm); }
+#else
+    {
+      if (tracker_algorithm == "BOOSTING")
+        tracker = TrackerBoosting::create();
+      if (tracker_algorithm == "MIL")
+        tracker = TrackerMIL::create();
+      if (tracker_algorithm == "KCF")
+        tracker = TrackerKCF::create();
+      if (tracker_algorithm == "TLD")
+        tracker = TrackerTLD::create();
+      if (tracker_algorithm == "MEDIANFLOW")
+        tracker = TrackerMedianFlow::create();
+      if (tracker_algorithm == "GOTURN")
+        tracker = TrackerGOTURN::create();
+      if (tracker_algorithm == "MOSSE")
+        tracker = TrackerMOSSE::create();
+    }
+#endif
 
     if( tracker == NULL )
     {
