@@ -226,6 +226,7 @@ public:
 
   void imageCb(const sensor_msgs::ImageConstPtr& msg)
   {
+    int number_of_image_subscribers = image_pub_.getNumSubscribers();
     cv_bridge::CvImagePtr cv_ptr_image_copy_;///< Copy of the image received
     try
     {
@@ -333,7 +334,7 @@ public:
         else
         {
           //Tracker Initialized
-          if(tracker->update( cv_ptr_image_copy_->image, roi_rect_))
+          if(tracker->update( cv_ptr_image_copy_->image, roi_rect_) && number_of_image_subscribers > 0)
           {
             rectangle(cv_ptr_image_copy_->image,roi_rect_, Scalar(255,0,0),3,8,0);
           }
@@ -348,13 +349,16 @@ public:
       {
         if( tracker->update( cv_ptr_image_copy_->image, roi_rect_ ) )
         {
-          Point point1 = Point(roi_rect_.x, roi_rect_.y);
-          Point point2 = Point(roi_rect_.x + roi_rect_.width, roi_rect_.y+roi_rect_.height);
-          rectangle(cv_ptr_image_copy_->image, point1, point2, Scalar(255,0,0),3,8,0);
-          if(cam_info_received_)
+          if(number_of_image_subscribers > 0)
           {
-            double px = -fx_*tan(yaw_offset_) + cx_;
-            circle(cv_ptr_image_copy_->image, Point(px, cy_), 5, Scalar(0,0,255), 5);
+            Point point1 = Point(roi_rect_.x, roi_rect_.y);
+            Point point2 = Point(roi_rect_.x + roi_rect_.width, roi_rect_.y+roi_rect_.height);
+            rectangle(cv_ptr_image_copy_->image, point1, point2, Scalar(255,0,0),3,8,0);
+            if(cam_info_received_)
+            {
+              double px = -fx_*tan(yaw_offset_) + cx_;
+              circle(cv_ptr_image_copy_->image, Point(px, cy_), 5, Scalar(0,0,255), 5);
+            }
           }
           //Publish ros msg:
           sensor_msgs::RegionOfInterest roi_out_msg;
@@ -368,7 +372,7 @@ public:
     }
 
     // Output modified video stream
-    if(image_pub_.getNumSubscribers()>0)
+    if(number_of_image_subscribers >0)
     {
       image_pub_.publish(cv_ptr_image_copy_->toImageMsg());
     }
