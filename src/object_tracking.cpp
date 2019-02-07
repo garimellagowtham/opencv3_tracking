@@ -44,7 +44,7 @@ class ImageTracker
 
 public:
   ImageTracker(std::string tracker_algorithm)
-    : it_(nh_), tracker_initialized_(false), roi_received_(false), cam_info_received_(false)
+    : it_(nh_), tracker_initialized_(false), roi_received_(false), cam_info_received_(false), roi_image_received_(false)
   {
     // Subscribe to input video feed and publish output video feed
     image_sub_ = it_.subscribe("image", 1,
@@ -238,7 +238,7 @@ public:
     }
 
     //Initialize Tracker:
-    if(roi_received_ && roi_image_received_)
+    if(roi_received_ && roi_image_received_ && cv_ptr_image_copy_ != NULL)
     {
       roi_received_ = false;
       roi_image_received_ = false;//Consumed
